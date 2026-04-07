@@ -28,7 +28,7 @@
 
     var AssetManager = require("../lib/assetmanager");
 
-    function makeAssetManager(config, renderManager) {
+    function makeAssetManager(config, renderManager, loggerOverrides) {
         var generator = {},
             document = { id: 1 },
             logger = {
@@ -36,7 +36,15 @@
                 error: function () {},
                 info: function () {}
             },
-            am = new AssetManager(generator, config || {}, logger, document, renderManager);
+            key;
+        if (loggerOverrides) {
+            for (key in loggerOverrides) {
+                if (loggerOverrides.hasOwnProperty(key)) {
+                    logger[key] = loggerOverrides[key];
+                }
+            }
+        }
+        var am = new AssetManager(generator, config || {}, logger, document, renderManager);
 
         am._fileManager.moveFileInto = function () {
             var d = Q.defer();
@@ -98,6 +106,45 @@
         });
 
         am._requestRender({ id: "c1", assetPath: "out.png", extension: "png" });
+    };
+
+    exports.testRetryLogsWarnBeforeEachRetry = function (test) {
+        var calls = 0;
+        var warns = [];
+        var mockRM = {
+            render: function () {
+                calls++;
+                if (calls < 3) {
+                    return Q.reject(new Error("transient"));
+                }
+                return Q.resolve({ path: "/tmp/asset.png", errors: [] });
+            }
+        };
+
+        var am = makeAssetManager(
+            { "render-retry-max": 2, "render-retry-delay-ms": 0 },
+            mockRM,
+            {
+                warn: function () {
+                    warns.push(Array.prototype.slice.call(arguments));
+                }
+            }
+        );
+
+        whenIdle(am, function () {
+            test.strictEqual(warns.length, 2, "one warn before each retry");
+            test.strictEqual(warns[0][0], "Render attempt %d of %d failed for %s: %s; retrying");
+            test.strictEqual(warns[0][1], 1);
+            test.strictEqual(warns[0][2], 3);
+            test.strictEqual(warns[0][3], "out.png");
+            test.strictEqual(warns[0][4], "transient");
+            test.strictEqual(warns[1][1], 2);
+            test.strictEqual(warns[1][2], 3);
+            test.strictEqual(warns[1][4], "transient");
+            test.done();
+        });
+
+        am._requestRender({ id: "c1b", assetPath: "out.png", extension: "png" });
     };
 
     exports.testNoRetryWhenMaxIsZero = function (test) {
