@@ -234,4 +234,54 @@
         test.done();
     };
 
+    exports.testRetryBackoffDefaultMultiplierEqualDelays = function (test) {
+        var mockRM = { render: function () { return Q.resolve({ path: "/t", errors: [] }); } };
+        var am = makeAssetManager({ "render-retry-delay-ms": 50 }, mockRM);
+        test.strictEqual(am._getRetryWaitMsAfterFailure(1), 50);
+        test.strictEqual(am._getRetryWaitMsAfterFailure(2), 50);
+        test.done();
+    };
+
+    exports.testRetryBackoffMultiplierExponential = function (test) {
+        var mockRM = { render: function () { return Q.resolve({ path: "/t", errors: [] }); } };
+        var am = makeAssetManager({
+            "render-retry-delay-ms": 100,
+            "render-retry-backoff-multiplier": 2
+        }, mockRM);
+        test.strictEqual(am._getRetryWaitMsAfterFailure(1), 100);
+        test.strictEqual(am._getRetryWaitMsAfterFailure(2), 200);
+        test.strictEqual(am._getRetryWaitMsAfterFailure(3), 400);
+        test.done();
+    };
+
+    exports.testRetryBackoffMaxCap = function (test) {
+        var mockRM = { render: function () { return Q.resolve({ path: "/t", errors: [] }); } };
+        var am = makeAssetManager({
+            "render-retry-delay-ms": 1000,
+            "render-retry-backoff-multiplier": 10,
+            "render-retry-backoff-max-ms": 500
+        }, mockRM);
+        test.strictEqual(am._getRetryWaitMsAfterFailure(1), 500);
+        test.strictEqual(am._getRetryWaitMsAfterFailure(2), 500);
+        test.done();
+    };
+
+    exports.testRetryBackoffJitterWithMockRandom = function (test) {
+        var mockRM = { render: function () { return Q.resolve({ path: "/t", errors: [] }); } };
+        var am = makeAssetManager({
+            "render-retry-delay-ms": 100,
+            "render-retry-jitter": true
+        }, mockRM);
+        var orig = Math.random;
+        Math.random = function () {
+            return 0;
+        };
+        try {
+            test.strictEqual(am._getRetryWaitMsAfterFailure(1), 0);
+        } finally {
+            Math.random = orig;
+        }
+        test.done();
+    };
+
 }());
