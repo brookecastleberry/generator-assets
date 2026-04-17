@@ -10,7 +10,6 @@ permissions:
 
 jobs:
   launch-cursor-agent:
-    if: contains(github.event.issue.labels.*.name, 'cursor-trigger')
     runs-on: ubuntu-latest
     steps:
       - name: Launch Cursor Cloud agent
