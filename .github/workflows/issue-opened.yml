@@ -8,13 +8,14 @@ on:
 
 permissions:
   issues: write
+  pull-requests: read
 
 jobs:
   launch-cursor-agent:
     if: contains(github.event.issue.labels.*.name, 'cursor-trigger')
     runs-on: ubuntu-latest
     steps:
-      - name: Launch Cursor Cloud agent
+      - name: Launch feature agent then test agent
         uses: actions/github-script@v7
         env:
           CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
@@ -25,54 +26,144 @@ jobs:
               throw new Error("Missing required secret: CURSOR_API_KEY");
             }
 
+            const authHeader = `Basic ${Buffer.from(`${process.env.CURSOR_API_KEY}:`).toString("base64")}`;
+            const headers = {
+              "Authorization": authHeader,
+              "Content-Type": "application/json"
+            };
+            const terminalStatuses = new Set(["FINISHED", "FAILED", "STOPPED", "CANCELED"]);
+            const MAX_POLL_ATTEMPTS = 120;
+            const POLL_INTERVAL_MS = 15000;
+            const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+            const launchAgent = async (payload, label) => {
+              const response = await fetch("https://api.cursor.com/v0/agents", {
+                method: "POST",
+                headers,
+                body: JSON.stringify(payload)
+              });
+              const body = await response.json().catch(() => ({}));
+              if (!response.ok) {
+                throw new Error(`${label} launch failed (${response.status}): ${JSON.stringify(body)}`);
+              }
+              if (!body.id) {
+                throw new Error(`${label} launch succeeded but no agent id was returned.`);
+              }
+              return body;
+            };
+
+            const fetchAgent = async (agentId) => {
+              const response = await fetch(`https://api.cursor.com/v0/agents/${agentId}`, {
+                method: "GET",
+                headers: { "Authorization": authHeader }
+              });
+              const body = await response.json().catch(() => ({}));
+              if (!response.ok) {
+                throw new Error(`Agent fetch failed (${response.status}): ${JSON.stringify(body)}`);
+              }
+              return body;
+            };
+
+            const resolveOpenPrUrlForBranch = async (branchName) => {
+              const { data: pulls } = await github.rest.pulls.list({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                state: "open",
+                head: `${context.repo.owner}:${branchName}`
+              });
+              return pulls[0]?.html_url || "";
+            };
+
+            const pollUntilFinished = async (agentId, label) => {
+              let status = "CREATING";
+              let details;
+              for (let attempt = 1; attempt <= MAX_POLL_ATTEMPTS; attempt += 1) {
+                details = await fetchAgent(agentId);
+                status = String(details.status || "").toUpperCase();
+                if (terminalStatuses.has(status)) {
+                  break;
+                }
+                await wait(POLL_INTERVAL_MS);
+              }
+              if (!terminalStatuses.has(status)) {
+                throw new Error(`Timed out waiting for the ${label} to reach a terminal status.`);
+              }
+              if (status !== "FINISHED") {
+                throw new Error(`${label} ended with status ${status}.`);
+              }
+              return details;
+            };
+
+            const cursorAgentUrl = (details, agentId) =>
+              details?.target?.url || `https://cursor.com/agents?id=${agentId}`;
+
             const issueNumber = context.payload.issue.number;
             const issueBody = context.payload.issue.body || "";
             const issueTitle = context.payload.issue.title || "feature";
             const repoUrl = context.payload.repository.html_url;
             const baseRef = context.payload.repository.default_branch;
-            const promptText = issueBody.trim();
+            const featurePrompt = issueBody.trim();
             const safeSlug = issueTitle
               .toLowerCase()
               .replace(/[^a-z0-9]+/g, "-")
               .replace(/^-|-$/g, "")
               .slice(0, 30) || "feature";
-            const branchName = `cursor/issue-${issueNumber}-${safeSlug}`;
+            const featureBranchName = `cursor/issue-${issueNumber}-${safeSlug}`;
+            const featureAgentLaunchPayload = await launchAgent({
+              prompt: { text: featurePrompt },
+              model: "opus-4.7-high",
+              source: { repository: repoUrl, ref: baseRef },
+              target: { branchName: featureBranchName }
+            }, "Feature agent");
+            const featureAgentId = featureAgentLaunchPayload.id;
+            const featureAgentDetails = await pollUntilFinished(featureAgentId, "Feature agent");
+            const featureAgentStatus = String(featureAgentDetails.status || "").toUpperCase();
 
-            const auth = Buffer.from(`${process.env.CURSOR_API_KEY}:`).toString("base64");
-            const launchResponse = await fetch("https://api.cursor.com/v0/agents", {
-              method: "POST",
-              headers: {
-                "Authorization": `Basic ${auth}`,
-                "Content-Type": "application/json"
-              },
-              body: JSON.stringify({
-                prompt: { text: promptText },
-                model: "default",
-                source: {
-                  repository: repoUrl,
-                  ref: baseRef
-                },
-                target: {
-                  branchName: branchName
-                }
-              })
-            });
+            const testPromptText = [
+              `Generate test scripts and run tests for issue #${issueNumber} (${issueTitle}).`,
+              "Focus on validating the feature implementation from the previous agent run.",
+              "Add or update tests as needed, run the test suite, and fix any failing tests before finishing."
+            ].join("\n");
+            const testAgentLaunchPayload = await launchAgent({
+              prompt: { text: testPromptText },
+              model: "composer-2-fast",
+              source: { repository: repoUrl, ref: featureBranchName },
+              target: { branchName: featureBranchName, autoCreatePr: true }
+            }, "Test agent");
 
-            const launchJson = await launchResponse.json().catch(() => ({}));
-            if (!launchResponse.ok) {
-              const errorBody = typeof launchJson === "object" ? JSON.stringify(launchJson) : String(launchJson);
-              throw new Error(`Cursor API launch failed (${launchResponse.status}): ${errorBody}`);
+            const testAgentId = testAgentLaunchPayload.id || "unknown";
+            const testAgentDetails = await pollUntilFinished(testAgentId, "Test agent");
+            const testAgentStatus = String(testAgentDetails.status || "").toUpperCase();
+
+            const featureAgentUrl = cursorAgentUrl(featureAgentDetails, featureAgentId);
+            const testAgentUrl = cursorAgentUrl(testAgentDetails, testAgentId);
+            let prUrl = testAgentDetails?.target?.prUrl || "";
+            if (!prUrl) {
+              prUrl = await resolveOpenPrUrlForBranch(featureBranchName);
             }
 
-            const agentId = launchJson.id || "unknown";
-            const agentUrl = launchJson?.target?.url || `https://cursor.com/agents?id=${agentId}`;
+            const summaryOr = (text) => (text && String(text).trim()) || "_No summary returned by the API._";
 
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: issueNumber,
               body: [
-                `Agent ID: \`${agentId}\``,
-                `Agent URL: ${agentUrl}`
+                "### Cursor agents completed",
+                "",
+                "#### Feature agent (implementation)",
+                `- **Status:** ${featureAgentStatus}`,
+                `- **Summary:** ${summaryOr(featureAgentDetails.summary)}`,
+                `- **Agent:** [Open in Cursor](${featureAgentUrl}) · ID \`${featureAgentId}\``,
+                "",
+                "#### Test agent (tests + PR)",
+                `- **Status:** ${testAgentStatus}`,
+                `- **Summary:** ${summaryOr(testAgentDetails.summary)}`,
+                `- **Pull request:** ${prUrl ? `[${prUrl}](${prUrl})` : "No PR link returned by Cursor or found for this branch (search open PRs or the branch above)."}`,
+                `- **Agent:** [Open in Cursor](${testAgentUrl}) · ID \`${testAgentId}\``,
+                "",
+                `**Branch:** \`${featureBranchName}\``,
+                "",
+                `Triggered by issue #${issueNumber}.`
               ].join("\n")
             });
