@@ -1,0 +1,77 @@
+name: Issue Opened Automation
+
+on:
+  issues:
+    types:
+      - opened
+
+permissions:
+  issues: write
+
+jobs:
+  launch-cursor-agent:
+    if: contains(github.event.issue.labels.*.name, 'cursor-trigger')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Launch Cursor Cloud agent
+        uses: actions/github-script@v7
+        env:
+          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            if (!process.env.CURSOR_API_KEY) {
+              throw new Error("Missing required secret: CURSOR_API_KEY");
+            }
+
+            const issueNumber = context.payload.issue.number;
+            const issueBody = context.payload.issue.body || "";
+            const issueTitle = context.payload.issue.title || "feature";
+            const repoUrl = context.payload.repository.html_url;
+            const baseRef = context.payload.repository.default_branch;
+            const promptText = issueBody.trim();
+            const safeSlug = issueTitle
+              .toLowerCase()
+              .replace(/[^a-z0-9]+/g, "-")
+              .replace(/^-|-$/g, "")
+              .slice(0, 30) || "feature";
+            const branchName = `cursor/issue-${issueNumber}-${safeSlug}`;
+
+            const auth = Buffer.from(`${process.env.CURSOR_API_KEY}:`).toString("base64");
+            const launchResponse = await fetch("https://api.cursor.com/v0/agents", {
+              method: "POST",
+              headers: {
+                "Authorization": `Basic ${auth}`,
+                "Content-Type": "application/json"
+              },
+              body: JSON.stringify({
+                prompt: { text: promptText },
+                model: "default",
+                source: {
+                  repository: repoUrl,
+                  ref: baseRef
+                },
+                target: {
+                  branchName: branchName
+                }
+              })
+            });
+
+            const launchJson = await launchResponse.json().catch(() => ({}));
+            if (!launchResponse.ok) {
+              const errorBody = typeof launchJson === "object" ? JSON.stringify(launchJson) : String(launchJson);
+              throw new Error(`Cursor API launch failed (${launchResponse.status}): ${errorBody}`);
+            }
+
+            const agentId = launchJson.id || "unknown";
+            const agentUrl = launchJson?.target?.url || `https://cursor.com/agents?id=${agentId}`;
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issueNumber,
+              body: [
+                `Agent ID: \`${agentId}\``,
+                `Agent URL: ${agentUrl}`
+              ].join("\n")
+            });
