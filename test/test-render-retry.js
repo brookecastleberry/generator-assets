@@ -151,6 +151,57 @@
         am._requestRender({ id: "c1b", assetPath: "out.png", extension: "png" });
     };
 
+    /**
+     * Elapsed ms in the warn line must reflect wall time from attempt start to failure
+     * (Miro feature: per-attempt duration in the retry log).
+     */
+    exports.testRetryWarnElapsedMsMatchesAttemptDuration = function (test) {
+        var calls = 0;
+        var warns = [];
+        var mockRM = {
+            render: function () {
+                calls++;
+                if (calls < 3) {
+                    return Q.reject(new Error("transient"));
+                }
+                return Q.resolve({ path: "/tmp/asset.png", errors: [] });
+            }
+        };
+
+        var origNow = Date.now;
+        var nowIdx = 0;
+        // Two failures: start at 5000 then 5150 (150 ms "work"); second 9000 -> 9300 (300 ms).
+        // Third attempt succeeds after one Date.now at attempt start (10000).
+        var nowSequence = [5000, 5150, 9000, 9300, 10000];
+        Date.now = function () {
+            return nowSequence[nowIdx++];
+        };
+
+        var am = makeAssetManager(
+            { "render-retry-max": 2, "render-retry-delay-ms": 0 },
+            mockRM,
+            {
+                warn: function () {
+                    warns.push(Array.prototype.slice.call(arguments));
+                }
+            }
+        );
+
+        whenIdle(am, function () {
+            try {
+                test.strictEqual(nowIdx, 5, "Date.now: two per failed attempt plus one at successful attempt start");
+                test.strictEqual(warns.length, 2);
+                test.strictEqual(warns[0][5], 150);
+                test.strictEqual(warns[1][5], 300);
+            } finally {
+                Date.now = origNow;
+            }
+            test.done();
+        });
+
+        am._requestRender({ id: "c1c", assetPath: "out.png", extension: "png" });
+    };
+
     exports.testNoRetryWhenMaxIsZero = function (test) {
         var calls = 0;
         var mockRM = {
