@@ -151,6 +151,52 @@
         am._requestRender({ id: "c1b", assetPath: "out.png", extension: "png" });
     };
 
+    /**
+     * Elapsed ms in the retry warning must reflect Date.now() at attempt start vs failure.
+     * Mock Date.now() so the logged values are deterministic (Miro spec: include elapsed ms).
+     */
+    exports.testRetryWarnLogElapsedMsMatchesDateNowMock = function (test) {
+        var calls = 0;
+        var warns = [];
+        var mockRM = {
+            render: function () {
+                calls++;
+                if (calls < 3) {
+                    return Q.reject(new Error("transient"));
+                }
+                return Q.resolve({ path: "/tmp/asset.png", errors: [] });
+            }
+        };
+        var origNow = Date.now;
+        // Per attempt: attemptStart, then time at failure (two failures, then success).
+        var sequence = [1000, 1042, 2000, 2110, 3000];
+        var seq = 0;
+        Date.now = function () {
+            return sequence[seq++];
+        };
+        var am = makeAssetManager(
+            { "render-retry-max": 2, "render-retry-delay-ms": 0 },
+            mockRM,
+            {
+                warn: function () {
+                    warns.push(Array.prototype.slice.call(arguments));
+                }
+            }
+        );
+        whenIdle(am, function () {
+            try {
+                test.strictEqual(seq, 5, "Date.now should be start+elapsed per failed attempt, then start of success");
+                test.strictEqual(warns.length, 2);
+                test.strictEqual(warns[0][4], 42, "first failure elapsed ms");
+                test.strictEqual(warns[1][4], 110, "second failure elapsed ms");
+            } finally {
+                Date.now = origNow;
+            }
+            test.done();
+        });
+        am._requestRender({ id: "c1c", assetPath: "out.png", extension: "png" });
+    };
+
     exports.testNoRetryWhenMaxIsZero = function (test) {
         var calls = 0;
         var mockRM = {
