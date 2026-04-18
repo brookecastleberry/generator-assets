@@ -133,14 +133,18 @@
 
         whenIdle(am, function () {
             test.strictEqual(warns.length, 2, "one warn before each retry");
-            test.strictEqual(warns[0][0], "Render attempt %d of %d failed for %s: %s; retrying");
+            test.strictEqual(warns[0][0], "Render attempt %d of %d failed for %s after %dms: %s; retrying");
             test.strictEqual(warns[0][1], 1);
             test.strictEqual(warns[0][2], 3);
             test.strictEqual(warns[0][3], "out.png");
-            test.strictEqual(warns[0][4], "transient");
+            test.strictEqual(typeof warns[0][4], "number", "elapsed ms should be a number");
+            test.ok(warns[0][4] >= 0, "elapsed ms should be non-negative");
+            test.strictEqual(warns[0][5], "transient");
             test.strictEqual(warns[1][1], 2);
             test.strictEqual(warns[1][2], 3);
-            test.strictEqual(warns[1][4], "transient");
+            test.strictEqual(typeof warns[1][4], "number", "elapsed ms should be a number");
+            test.ok(warns[1][4] >= 0, "elapsed ms should be non-negative");
+            test.strictEqual(warns[1][5], "transient");
             test.done();
         });
 
