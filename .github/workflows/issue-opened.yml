@@ -149,10 +149,11 @@ jobs:
             await waitForRemoteBranch(featureBranchName);
 
             const testPromptText = [
-              `Generate test scripts and run tests for issue #${issueNumber} (${issueTitle}).`,
-              "Use the current feature branch (same ref as this run); you do not need an existing PR to read code or run tests.",
-              "Focus on validating the feature implementation from the previous agent run.",
-              "Add or update tests as needed, run the test suite, and fix any failing tests before finishing."
+              `Quick validation for issue #${issueNumber} (${issueTitle}) on the current feature branch.`,
+              "Do **not** run the full project test suite (e.g. avoid a full \`grunt build test\` or running every unit test) unless a change truly requires it.",
+              "Infer what the previous agent changed, add or adjust **only** tests that cover that behavior, and run **those** tests (or the smallest npm/mocha/grunt subset that exercises the touched code).",
+              "Use the current feature branch; no existing PR is required to read code or run tests.",
+              "Fix failures for the tests you touched, then finish and open the PR."
             ].join("\n");
             const testAgentLaunchPayload = await launchAgent({
               prompt: { text: testPromptText },

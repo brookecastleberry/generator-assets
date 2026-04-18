@@ -6,7 +6,7 @@ This is `generator-assets`, an Image Asset Generation plug-in for Adobe Photosho
 
 ### GitHub issue workflow (two Cloud Agents)
 
-Issues labeled `cursor-trigger` run **two** Cursor Cloud Agents in order: a **feature** agent (implementation on a branch), then a **test** agent (tests and PR). The **feature** agent should **not** run `npm test`, `grunt test`, or `grunt build test`; it should implement the request and push to the branch only. It must **not** open a pull request (the **test** agent runs the suite and opens the PR). For normal local work or reviews, follow the project README and standard development workflows for this repo.
+Issues labeled `cursor-trigger` run **two** Cursor Cloud Agents in order: a **feature** agent (implementation on a branch), then a **test** agent (targeted tests and PR). The **feature** agent should **not** run `npm test`, `grunt test`, or `grunt build test`; it should implement the request and push to the branch only. It must **not** open a pull request (the **test** agent adds focused tests for the change, runs those tests—not necessarily the full suite—and opens the PR). For normal local work or reviews, follow the project README and standard development workflows for this repo.
 
 ### Non-obvious caveats
 
