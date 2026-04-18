@@ -151,6 +151,51 @@
         am._requestRender({ id: "c1b", assetPath: "out.png", extension: "png" });
     };
 
+    /**
+     * Elapsed ms in the warn line must match Date.now() deltas for each failed attempt
+     * (deterministic with a stubbed clock).
+     */
+    exports.testRetryWarnElapsedMsMatchesAttemptDuration = function (test) {
+        var calls = 0;
+        var warns = [];
+        var mockRM = {
+            render: function () {
+                calls++;
+                if (calls < 3) {
+                    return Q.reject(new Error("transient"));
+                }
+                return Q.resolve({ path: "/tmp/asset.png", errors: [] });
+            }
+        };
+        var seq = [1000, 1042, 2000, 2150, 3000];
+        var i = 0;
+        var origNow = Date.now;
+        Date.now = function () {
+            return seq[i++];
+        };
+
+        var am = makeAssetManager(
+            { "render-retry-max": 2, "render-retry-delay-ms": 0 },
+            mockRM,
+            {
+                warn: function () {
+                    warns.push(Array.prototype.slice.call(arguments));
+                }
+            }
+        );
+
+        whenIdle(am, function () {
+            Date.now = origNow;
+            test.strictEqual(warns.length, 2);
+            test.strictEqual(warns[0][5], 42, "first failure: 1042 - 1000");
+            test.strictEqual(warns[1][5], 150, "second failure: 2150 - 2000");
+            test.strictEqual(i, 5, "Date.now should be start+end for two failures, start for success");
+            test.done();
+        });
+
+        am._requestRender({ id: "c1c", assetPath: "out.png", extension: "png" });
+    };
+
     exports.testNoRetryWhenMaxIsZero = function (test) {
         var calls = 0;
         var mockRM = {
