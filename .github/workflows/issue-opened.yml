@@ -6,6 +6,7 @@ on:
       - opened
 
 permissions:
+  contents: read
   issues: write
   pull-requests: read
 
@@ -93,6 +94,33 @@ jobs:
               return details;
             };
 
+            const waitForRemoteBranch = async (branchName) => {
+              const maxAttempts = 80;
+              for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+                try {
+                  await github.rest.repos.getBranch({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    branch: branchName
+                  });
+                  return;
+                } catch (error) {
+                  const status = error?.status ?? error?.response?.status;
+                  if (status === 404) {
+                    if (attempt === maxAttempts) {
+                      throw new Error(
+                        `Timed out waiting for branch ${branchName} to exist on GitHub ` +
+                        `(feature agent finished before the remote branch was visible).`
+                      );
+                    }
+                    await wait(POLL_INTERVAL_MS);
+                    continue;
+                  }
+                  throw error;
+                }
+              }
+            };
+
             const cursorAgentUrl = (details, agentId) =>
               details?.target?.url || `https://cursor.com/agents?id=${agentId}`;
 
@@ -112,14 +140,17 @@ jobs:
               prompt: { text: featurePrompt },
               model: "claude-opus-4-7-thinking-high",
               source: { repository: repoUrl, ref: baseRef },
-              target: { branchName: featureBranchName }
+              target: { branchName: featureBranchName, autoCreatePr: false }
             }, "Feature agent");
             const featureAgentId = featureAgentLaunchPayload.id;
             const featureAgentDetails = await pollUntilFinished(featureAgentId, "Feature agent");
             const featureAgentStatus = String(featureAgentDetails.status || "").toUpperCase();
 
+            await waitForRemoteBranch(featureBranchName);
+
             const testPromptText = [
               `Generate test scripts and run tests for issue #${issueNumber} (${issueTitle}).`,
+              "Use the current feature branch (same ref as this run); you do not need an existing PR to read code or run tests.",
               "Focus on validating the feature implementation from the previous agent run.",
               "Add or update tests as needed, run the test suite, and fix any failing tests before finishing."
             ].join("\n");

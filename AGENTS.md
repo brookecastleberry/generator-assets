@@ -2,17 +2,11 @@
 
 ## Cursor Cloud specific instructions
 
-This is `generator-assets`, an Image Asset Generation plug-in for Adobe Photoshop CC's Generator framework. It is a **plug-in only** (not a standalone app) — it cannot be run as a server or started independently. Development work focuses on lint, build, and test.
+This is `generator-assets`, an Image Asset Generation plug-in for Adobe Photoshop CC's Generator framework. It is a **plug-in only** (not a standalone app) — it cannot be run as a server or started independently.
 
-### Key commands
+### GitHub issue workflow (two Cloud Agents)
 
-| Task | Command |
-|---|---|
-| Install dependencies | `npm install` |
-| Full CI pipeline (build + lint + test) | `grunt build test` |
-| Build only (PEG parser) | `grunt build` |
-| Lint only (JSHint + JSCS) | `grunt test` (runs lint + unit tests) |
-| Unit tests only | `npm test` |
+Issues labeled `cursor-trigger` run **two** Cursor Cloud Agents in order: a **feature** agent (implementation on a branch), then a **test** agent (tests and PR). The **feature** agent should **not** run `npm test`, `grunt test`, or `grunt build test`; it should implement the request and push to the branch only. It must **not** open a pull request (the **test** agent runs the suite and opens the PR). For normal local work or reviews, follow the project README and standard development workflows for this repo.
 
 ### Non-obvious caveats
 
