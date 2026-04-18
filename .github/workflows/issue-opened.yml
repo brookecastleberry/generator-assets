@@ -110,7 +110,7 @@ jobs:
             const featureBranchName = `cursor/issue-${issueNumber}-${safeSlug}`;
             const featureAgentLaunchPayload = await launchAgent({
               prompt: { text: featurePrompt },
-              model: "claude-opus-4-7",
+              model: "claude-opus-4-7-thinking-high",
               source: { repository: repoUrl, ref: baseRef },
               target: { branchName: featureBranchName }
             }, "Feature agent");
@@ -125,7 +125,7 @@ jobs:
             ].join("\n");
             const testAgentLaunchPayload = await launchAgent({
               prompt: { text: testPromptText },
-              model: "composer-2-fast",
+              model: "composer-2",
               source: { repository: repoUrl, ref: featureBranchName },
               target: { branchName: featureBranchName, autoCreatePr: true }
             }, "Test agent");
