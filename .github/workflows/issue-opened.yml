@@ -171,8 +171,6 @@ jobs:
               prUrl = await resolveOpenPrUrlForBranch(featureBranchName);
             }
 
-            const summaryOr = (text) => (text && String(text).trim()) || "_No summary returned by the API._";
-
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -182,12 +180,10 @@ jobs:
                 "",
                 "#### Feature agent (implementation)",
                 `- **Status:** ${featureAgentStatus}`,
-                `- **Summary:** ${summaryOr(featureAgentDetails.summary)}`,
                 `- **Agent:** [Open in Cursor](${featureAgentUrl}) · ID \`${featureAgentId}\``,
                 "",
                 "#### Test agent (tests + PR)",
                 `- **Status:** ${testAgentStatus}`,
-                `- **Summary:** ${summaryOr(testAgentDetails.summary)}`,
                 `- **Pull request:** ${prUrl ? `[${prUrl}](${prUrl})` : "No PR link returned by Cursor or found for this branch (search open PRs or the branch above)."}`,
                 `- **Agent:** [Open in Cursor](${testAgentUrl}) · ID \`${testAgentId}\``,
                 "",

@@ -8,6 +8,8 @@ This is `generator-assets`, an Image Asset Generation plug-in for Adobe Photosho
 
 Issues labeled `cursor-trigger` run **two** Cursor Cloud Agents in order: a **feature** agent (implementation on a branch), then a **test** agent (targeted tests and PR). The **feature** agent should **not** run `npm test`, `grunt test`, or `grunt build test`; it should implement the request and push to the branch only. It must **not** open a pull request (the **test** agent adds focused tests for the change, runs those tests—not necessarily the full suite—and opens the PR). For normal local work or reviews, follow the project README and standard development workflows for this repo.
 
+**Test / validation scope (same idea locally or in Cloud):** Use `git diff` against the default branch (e.g. `origin/main` or your repo’s default) to see what changed on the feature branch, add or adjust only the tests that cover that change, and run **that** smallest subset—not the full suite—when it is enough. The exact strings sent to the **Cloud** test agent are in `.github/workflows/issue-opened.yml` (`testPromptText`).
+
 ### Non-obvious caveats
 
 - The original `package-lock.json` contains references to Adobe's internal artifactory (`artifactory.corp.adobe.com`), which is inaccessible externally. If `npm install` fails with `UNABLE_TO_GET_ISSUER_CERT_LOCALLY`, delete `package-lock.json` and run `npm install` again to regenerate it from the public npm registry.
